@@ -247,10 +247,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   xResolution: 10
   yResolution: 10
-  material: {fileID: 2100000, guid: a84c5e851115bbd42a08d75d0fc358b8, type: 2}
+  material: {fileID: 2100000, guid: 89390bbd73dbfd640b853f72b2abc895, type: 2}
   cameraPos: {x: 0, y: 0, z: 0}
-  xSize: 10
-  ySize: 10
+  xSize: 100
+  ySize: 100
   GalacticBulgeRadius: 10
   GalacticDiskRadius: 10
   GalacticHaloRadius: 10

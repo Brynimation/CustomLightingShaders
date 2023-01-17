@@ -49,7 +49,7 @@ public class GeneratePlane : MonoBehaviour
             for (int y = 0; y < yResolution; y++)
             {
                 uvs[vertexIndex] = new Vector3((x / (float)xResolution), y / (float)yResolution);
-                vertices[vertexIndex] = new Vector3(-0.5f * GalacticDiskRadius + (x * GalacticDiskRadius) / xResolution, -0.5f * GalacticDiskRadius + (y * GalacticDiskRadius) / yResolution, 0f);
+                vertices[vertexIndex] = new Vector3(-0.5f * xSize + (x * xSize) / xResolution, -0.5f * ySize + (y * ySize) / yResolution, 0f);
                 indices[vertexIndex] = vertexIndex;
                 vertexIndex++;
             }
