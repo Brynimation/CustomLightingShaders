@@ -68,6 +68,7 @@ Shader "Tutorial/GeometryShader"
             GeomData vert(Attributes input)
             {
                 GeomData output;
+                input.positionOS = input.positionOS + float4(10, 0.0, 0.0, 0.0)* _Time;
                 output.positionOS = input.positionOS;
                 float4 worldSpacePos = mul(unity_ObjectToWorld, input.positionOS); //Transform vertex position to world space
                 output.positionWS = worldSpacePos;
@@ -85,7 +86,7 @@ Shader "Tutorial/GeometryShader"
                 {
                     Interpolators o;
                     float angle = angleIncrement * i;
-                    float r = 2.0;
+                    float r = 1.0;
                     float x = r * cos(angle);
                     float y = r * sin(angle);
                     float3 os = centreWS + float3(x,y,0);
