@@ -19,7 +19,7 @@ public class Plane
         this.resolution = resolution;
         this.localUp = localUp;
         localRight = new Vector3(localUp.y, localUp.z, localUp.x);
-        localForward = Vector3.Cross(localRight, localUp);
+        localForward = Vector3.Cross(localUp, localRight);
         
     }
 
@@ -38,13 +38,14 @@ public class Plane
         verts = new Vector3[resolution * resolution];
         uvs = new Vector2[resolution * resolution];
         //indices = new int[resolution * resolution];
-        tris = new int[resolution * resolution * 6];
+        tris = new int[(resolution-1) * (resolution-1) * 6];
         int index = 0;
         for (int y = 0; y < resolution; y++)
         {
             for (int x = 0; x < resolution; x++)
             {
-                Vector2 percent = new Vector2(x, y)/(resolution - 1);
+                Vector2 percent = new Vector2(x, y)/(resolution - 1f);
+                uvs[index] = percent;
                 Vector3 pointOnUnitCube = localUp + (percent.x - 0.5f) * 2 * localRight + (percent.y - 0.5f) * 2 *localForward;
                 Vector3 pointOnUnitSphere = pointOnUnitCube.normalized;
                 verts[index] = pointOnUnitSphere;
@@ -52,9 +53,8 @@ public class Plane
 
                 if (x < resolution - 1 && y < resolution - 1)
                 {
-                    addTriangle(index, index + 1, index + resolution + 1); // triangles must be wound clockwise
-                    addTriangle(index, index + resolution + 1, index + resolution);
-                    
+                    addTriangle(index, index + resolution + 1, index + resolution); // triangles must be wound clockwise
+                    addTriangle(index, index + 1, index + resolution + 1);
                 }
                 index++;
 
@@ -62,7 +62,7 @@ public class Plane
         }
         mesh.Clear();
         mesh.vertices = verts;
-        //mesh.SetUVs(0, uvs);
+        mesh.uv = uvs;
         mesh.triangles = tris;
         mesh.RecalculateNormals();
         //mesh.SetIndices(indices, MeshTopology.Triangles, 0);
@@ -106,7 +106,8 @@ public class QuadSphere : MonoBehaviour
             {
                 GameObject meshObject = new GameObject("mesh");
                 meshObject.transform.SetParent(transform);
-                meshObject.AddComponent<MeshRenderer>().sharedMaterial = mat;
+                meshObject.AddComponent<MeshRenderer>();
+                meshObject.GetComponent<MeshRenderer>().sharedMaterial = mat;
                 meshFilters[i] = meshObject.AddComponent<MeshFilter>();
                 meshFilters[i].sharedMesh = new Mesh();
                 
