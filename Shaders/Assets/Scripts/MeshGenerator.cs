@@ -1,6 +1,7 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System;
 
 public class MeshData 
 {
@@ -23,15 +24,39 @@ public class MeshData
     }
 
 }
+
+public class NoiseMapData 
+{
+    public Color[] colourMap;
+    public float[][] noiseMap;
+
+    public NoiseMapData(Color[] colourMap, float[][] noiseMap) 
+    {
+        this.colourMap = colourMap;
+        this.noiseMap = noiseMap;
+    }
+}
+
+/*Struct to store the meshdata and noisemap data that will be added to our queues*/
+public struct ThreadData<T> 
+{
+    public T data;
+    public Action<T> callBack;
+
+    public ThreadData(T data, Action<T> callback){
+        this.data = data;
+        this.callBack = callback;
+    }
+}
 public static class MeshGenerator {
 
-    public static void DrawAndApplyNoiseMap(float[][] noiseMap, ref Renderer r) 
+    public static NoiseMapData GenerateNoiseMapData(int chunkSize, float noiseScale) 
     {
+        float[][] noiseMap = Noise.GenerateNoiseMap(chunkSize, noiseScale);
         int width = noiseMap.Length;
         int height = noiseMap[0].Length;
         Color[] pixels = new Color[width * height];
-        Texture2D noiseTexture = new Texture2D(width, height);
-        r.material.mainTexture = noiseTexture;
+        
         //r.material.color = Color.red;
         Debug.Log(string.Format("{0},{1}", width, height));
         for (int y = 0; y < height; y++)
@@ -41,9 +66,7 @@ public static class MeshGenerator {
                 pixels[(int)(y * width) + (int)x] = Color.Lerp(Color.black, Color.white, noiseMap[x][y]);
             }
         }
-        noiseTexture.SetPixels(pixels);
-        noiseTexture.Apply();
-        r.transform.localScale = new Vector3(width, 1, height);
+        return new NoiseMapData(pixels, noiseMap);
     }
 
     //chunk size is in unity units. Resolution is the number of vertices in a row

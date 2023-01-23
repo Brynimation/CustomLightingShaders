@@ -1,9 +1,13 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using System;
+using System.Threading;
 
 public class Endless : MonoBehaviour
 {
+    //Singleton. We only ever need one instance of Endless.
+    public static Endless Instance;
     [Range(0, 6)]
     [SerializeField] int LODTest;
     [SerializeField] float noiseScale;
@@ -18,6 +22,19 @@ public class Endless : MonoBehaviour
     int chunksVisibleInViewDist;
     Dictionary<Vector2Int, TerrainChunk> terrainChunkDict;
     List<TerrainChunk> terrainChunksVisibleLastUpdate;
+    Queue<ThreadData<NoiseMapData>> noiseMapQueue = new Queue<ThreadData<NoiseMapData>>();
+    Queue<ThreadData<MeshData>> meshDataQueue = new Queue<ThreadData<MeshData>>();
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Destroy(this);
+        }
+        else
+        {
+            Instance = this;
+        }
+    }
     void Start()
     {
         chunksVisibleInViewDist = Mathf.RoundToInt(renderDistance / chunkSize);
@@ -25,9 +42,70 @@ public class Endless : MonoBehaviour
         terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
     }
 
-    // Update is called once per frame
+    public void RequestMapData(Action<NoiseMapData> callback) 
+    {
+        //Thread start delegate represents our MapDataThread.
+        ThreadStart threadStart = delegate
+        {
+            MapDataThread(callback);
+        };
+        /*The method that we passed in as a delegate will now be running 
+        on a separate thread.*/
+        new Thread(threadStart).Start();
+    }
+    public void MapDataThread(Action<NoiseMapData> callback) 
+    {
+        NoiseMapData noiseMapData = MeshGenerator.GenerateNoiseMapData(chunkSize, noiseScale);
+        //Since we're running this method on a separate thread, we need to avoid 
+        //race conditions by preventing multiple threads from accessing the queue at once.
+        //We do this with the lock keyword
+        lock(noiseMapQueue){
+            noiseMapQueue.Enqueue(new ThreadData<NoiseMapData>(noiseMapData, callback));
+        }
+        
+    }
+
+    public void RequestMeshData(NoiseMapData noiseMapData, Action<MeshData> callback)
+    {
+        
+        ThreadStart threadStart = delegate
+        {
+            MeshDataThread(noiseMapData, callback);
+        };
+        /*The method that we passed in as a delegate will now be running 
+        on a separate thread.*/
+        new Thread(threadStart).Start();
+    }
+    public void MeshDataThread(NoiseMapData noiseMapData, Action<MeshData> callback)
+    {
+        MeshData meshData = MeshGenerator.GenerateMesh(noiseMapData.noiseMap, terrainHeightMultiplier, LODTest);
+        //Since we're running this method on a separate thread, we need to avoid 
+        //race conditions by preventing multiple threads from accessing the queue at once.
+        //We do this with the lock keyword
+        lock (meshDataQueue)
+        {
+            meshDataQueue.Enqueue(new ThreadData<MeshData>(meshData, callback));
+        }
+
+    }
     void Update()
     {
+        if (noiseMapQueue.Count > 0) {
+            for (int i = 0; i < noiseMapQueue.Count; i++) 
+            {
+                ThreadData<NoiseMapData> threadData = noiseMapQueue.Dequeue();
+                threadData.callBack(threadData.data);
+            }
+        }
+
+        if (meshDataQueue.Count > 0)
+        {
+            for (int i = 0; i < meshDataQueue.Count; i++)
+            {
+                ThreadData<MeshData> threadData = meshDataQueue.Dequeue();
+                threadData.callBack(threadData.data);
+            }
+        }
         viewerPosition = viewer.position;
         UpdateVisibleChunks();
     }
@@ -73,29 +151,47 @@ public class Endless : MonoBehaviour
     }
 }
 
-public class TerrainChunk 
+public class TerrainChunk
 {
     public Vector2Int coord;
     public Vector3 position;
     public int currentLevelOfDetail;
+    public MeshFilter mf;
+    public MeshRenderer r;
     GameObject terrainMesh;
     Bounds bounds;
     bool chunkVisible;
-    void SpawnChunk(Vector3 position, int chunkSize, Material mat, Transform parent, float noiseScale, float terrainHeightMultiplier) 
+    void SpawnChunk(Vector3 position, int chunkSize, Material mat, Transform parent, float noiseScale, float terrainHeightMultiplier)
     {
+
+        //Create new mesh object and parent it to this gameobject
         terrainMesh = new GameObject("Mesh");
-        MeshFilter mf = terrainMesh.AddComponent<MeshFilter>();
-        MeshRenderer mr = terrainMesh.AddComponent<MeshRenderer>();
+        mf = terrainMesh.AddComponent<MeshFilter>();
+        r = terrainMesh.AddComponent<MeshRenderer>();
         terrainMesh.transform.parent = parent;
-        terrainMesh.transform.localScale = Vector3.one * chunkSize / 10f; //A plane in unity is 10 units across by default
-        //We need to access the renderer of our terrain mesh so we can apply the noise map to a texture
-        float[][] noiseMap = Noise.GenerateNoiseMap(chunkSize, noiseScale);
-        Renderer r = terrainMesh.GetComponent<Renderer>();
+        Endless.Instance.RequestMapData(OnMapDataReceived);
+        //We access the renderer of our terrain mesh so we can apply the noise map to a texture
         r.material = mat;
-        MeshGenerator.DrawAndApplyNoiseMap(noiseMap, ref r);
-        MeshData meshData = MeshGenerator.GenerateMesh(noiseMap, terrainHeightMultiplier, currentLevelOfDetail);
+        NoiseMapData noiseMapData = MeshGenerator.GenerateNoiseMapData(chunkSize, noiseScale);
+        Texture2D noiseTexture = new Texture2D(chunkSize, chunkSize);
+        r.material.mainTexture = noiseTexture;
+        noiseTexture.SetPixels(noiseMapData.colourMap);
+        noiseTexture.Apply();
+        r.transform.localScale = new Vector3(chunkSize / 10f, 1, chunkSize / 10f);
+        //We now use the noise map data to generate the mesh.
+        MeshData meshData = MeshGenerator.GenerateMesh(noiseMapData.noiseMap, terrainHeightMultiplier, currentLevelOfDetail);
         mf.mesh = meshData.mesh;
         terrainMesh.transform.position = position;
+
+    }
+
+    void OnMapDataReceived(NoiseMapData noiseMapData)
+    {
+        Endless.Instance.RequestMeshData(noiseMapData, OnMeshDataReceived);
+    }
+    void OnMeshDataReceived(MeshData meshData) 
+    {
+        mf.mesh = meshData.mesh;
     }
     public TerrainChunk(Vector2Int coord, int chunkSize, Material mat, Transform parent, float noiseScale, float terrainHeightMultiplier, int currentLevelOfDetail) 
     {
