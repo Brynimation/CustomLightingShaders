@@ -25,20 +25,44 @@ public class MeshData
 }
 public static class MeshGenerator {
 
+    public static void DrawAndApplyNoiseMap(float[][] noiseMap, ref Renderer r) 
+    {
+        int width = noiseMap.Length;
+        int height = noiseMap[0].Length;
+        Color[] pixels = new Color[width * height];
+        Texture2D noiseTexture = new Texture2D(width, height);
+        r.material.mainTexture = noiseTexture;
+        //r.material.color = Color.red;
+        Debug.Log(string.Format("{0},{1}", width, height));
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                pixels[(int)(y * width) + (int)x] = Color.Lerp(Color.black, Color.white, noiseMap[x][y]);
+            }
+        }
+        noiseTexture.SetPixels(pixels);
+        noiseTexture.Apply();
+        r.transform.localScale = new Vector3(width, 1, height);
+    }
+
     //chunk size is in unity units. Resolution is the number of vertices in a row
-    public static MeshData GenerateMesh(float[][] noiseMap, float heightMultiplier) 
+    public static MeshData GenerateMesh(float[][] noiseMap, float heightMultiplier, int currentLevelOfDetail) 
     {
         Mesh mesh = new Mesh();
         int width = noiseMap.Length;
         int length = noiseMap[0].Length;
+        int meshSimplificationIncrement = (currentLevelOfDetail == 0) ? 1 : currentLevelOfDetail * 2;
+        int vertsPerRow = (width - 1) / meshSimplificationIncrement + 1;
+        int vertsPerCol = (length - 1) / meshSimplificationIncrement + 1;
         Vector3[] verts = new Vector3[width * length];
         Vector2[] uvs = new Vector2[width * length];
         int[] tris = new int[(width - 1) * (length - 1) * 6];
         int index = 0;
         int triIndex = 0;
-        for (int x = 0; x < width; x++)
+        for (int x = 0; x < width; x+= meshSimplificationIncrement)
         {
-            for (int z = 0; z < length; z++) 
+            for (int z = 0; z < length; z+= meshSimplificationIncrement) 
             {
                 float xPos = -width/2f + (x /(float) width) * width;
                 float zPos = -length / 2f + (z / (float)length) * length;
@@ -47,8 +71,8 @@ public static class MeshGenerator {
                 uvs[index] = new Vector2(xPos / width, zPos / length);
                 if (x < width - 1 && z < length - 1) 
                 {
-                    AddTriangle(index, index + width + 1, index + width, ref tris, ref triIndex);
-                    AddTriangle(index, index + 1, index + width + 1, ref tris, ref triIndex);
+                    AddTriangle(index, index + vertsPerRow + 1, index + vertsPerRow, ref tris, ref triIndex);
+                    AddTriangle(index, index + 1, index + vertsPerRow + 1, ref tris, ref triIndex);
                     Debug.Log(triIndex);
                 }
                 index++;

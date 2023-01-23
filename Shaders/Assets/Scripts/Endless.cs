@@ -4,6 +4,8 @@ using UnityEngine;
 
 public class Endless : MonoBehaviour
 {
+    [Range(0, 6)]
+    [SerializeField] int LODTest;
     [SerializeField] float noiseScale;
     [SerializeField] float terrainHeightMultiplier = 10f;
     [SerializeField]Material terrainMaterial;
@@ -31,13 +33,14 @@ public class Endless : MonoBehaviour
     }
     void UpdateVisibleChunks() 
     {
+        int currentChunkCoordX = Mathf.RoundToInt(viewerPosition.x / chunkSize);
+        int currentChunkCoordZ = Mathf.RoundToInt(viewerPosition.z / chunkSize);
         for (int i = 0; i < terrainChunksVisibleLastUpdate.Count; i++)
         {
             terrainChunksVisibleLastUpdate[i].SetVisible(false);
+          
         }
         terrainChunksVisibleLastUpdate.Clear();
-        int currentChunkCoordX = Mathf.RoundToInt(viewerPosition.x / chunkSize);
-        int currentChunkCoordZ = Mathf.RoundToInt(viewerPosition.z / chunkSize);
 
         /*Loop through all the chunks that should be rendered each frame*/
         for (int xOffset = -chunksVisibleInViewDist / 2; xOffset <= chunksVisibleInViewDist / 2; xOffset++) 
@@ -60,8 +63,9 @@ public class Endless : MonoBehaviour
                 }
                 /*If we haven't already seen a chunk at the given coord we instantiate a new one.*/
                 else {
-                    TerrainChunk newChunk = new TerrainChunk(viewedChunkCoord, chunkSize, terrainMaterial, this.transform, noiseScale, terrainHeightMultiplier);
+                    TerrainChunk newChunk = new TerrainChunk(viewedChunkCoord, chunkSize, terrainMaterial, this.transform, noiseScale, terrainHeightMultiplier, LODTest);
                     terrainChunkDict.Add(viewedChunkCoord, newChunk);
+                    terrainChunksVisibleLastUpdate.Add(newChunk);
                 }
             }
            
@@ -71,30 +75,12 @@ public class Endless : MonoBehaviour
 
 public class TerrainChunk 
 {
-    Vector3 position;
+    public Vector2Int coord;
+    public Vector3 position;
+    public int currentLevelOfDetail;
     GameObject terrainMesh;
     Bounds bounds;
     bool chunkVisible;
-    void DrawNoiseMap(float[][] noiseMap, Renderer r) 
-    {
-        int width = noiseMap.Length;
-        int height = noiseMap[0].Length;
-        Color[] pixels = new Color[width * height];
-        Texture2D noiseTexture = new Texture2D(width, height);
-        r.material.mainTexture = noiseTexture;
-        //r.material.color = Color.red;
-        Debug.Log(string.Format("{0},{1}", width, height));
-        for (int y = 0; y < height; y++) 
-        {
-            for(int x = 0; x < width; x++) 
-            {
-                pixels[(int)(y * width) + (int)x] = Color.Lerp(Color.black, Color.white, noiseMap[x][y]);
-            }
-        }
-        noiseTexture.SetPixels(pixels);
-        noiseTexture.Apply();
-        r.transform.localScale = new Vector3(width, 1, height);
-    }
     void SpawnChunk(Vector3 position, int chunkSize, Material mat, Transform parent, float noiseScale, float terrainHeightMultiplier) 
     {
         terrainMesh = new GameObject("Mesh");
@@ -106,15 +92,17 @@ public class TerrainChunk
         float[][] noiseMap = Noise.GenerateNoiseMap(chunkSize, noiseScale);
         Renderer r = terrainMesh.GetComponent<Renderer>();
         r.material = mat;
-        DrawNoiseMap(noiseMap, r);
-        MeshData meshData = MeshGenerator.GenerateMesh(noiseMap, terrainHeightMultiplier);
+        MeshGenerator.DrawAndApplyNoiseMap(noiseMap, ref r);
+        MeshData meshData = MeshGenerator.GenerateMesh(noiseMap, terrainHeightMultiplier, currentLevelOfDetail);
         mf.mesh = meshData.mesh;
         terrainMesh.transform.position = position;
     }
-    public TerrainChunk(Vector2Int coord, int chunkSize, Material mat, Transform parent, float noiseScale, float terrainHeightMultiplier) 
+    public TerrainChunk(Vector2Int coord, int chunkSize, Material mat, Transform parent, float noiseScale, float terrainHeightMultiplier, int currentLevelOfDetail) 
     {
-        position = new Vector3(coord.x*chunkSize * 10, 0f, coord.y * chunkSize * 10);
+        this.coord = coord;
+        position = new Vector3(coord.x*chunkSize, 0f, coord.y * chunkSize);
         bounds = new Bounds(position, new Vector3(chunkSize, 1f, chunkSize));
+        this.currentLevelOfDetail = currentLevelOfDetail;
         SpawnChunk(position, chunkSize, mat, parent, noiseScale, terrainHeightMultiplier);
     }
 
@@ -133,6 +121,6 @@ public class TerrainChunk
     }
     public void SetVisible(bool visible) 
     {
-        if(chunkVisible) terrainMesh.SetActive(visible);
+        terrainMesh.SetActive(visible);
     }
 }
