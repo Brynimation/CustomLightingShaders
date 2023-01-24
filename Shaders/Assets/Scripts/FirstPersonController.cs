@@ -37,7 +37,7 @@ public class FirstPersonController : MonoBehaviour
 
         Vector3 moveDir = new Vector3(Input.GetAxisRaw("Horizontal"), 0, Input.GetAxisRaw("Vertical"));
         moveDir.Normalize();
-        int flight = Input.GetKey(KeyCode.Space) ? 1 : (Input.GetKey(KeyCode.LeftShift) ? -1 : 0);
+        int flight = Input.GetKey(KeyCode.Space) ? 1 : (Input.GetKey(KeyCode.LeftControl) ? -1 : 0);
         float moveSpeed = Input.GetKey(KeyCode.LeftShift) ? runSpeed : walkSpeed;
         Vector3 targetMoveAmount = moveDir * moveSpeed + Vector3.up * flight * flightSpeed;
         moveAmount = Vector3.SmoothDamp(moveAmount, targetMoveAmount, ref currentVel, smoothTime);

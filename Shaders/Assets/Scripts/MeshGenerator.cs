@@ -2,8 +2,9 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System;
+using UnityEngine.AI;
 
-public class MeshData 
+public class MeshData
 {
     public Mesh mesh;
     int triangleIndex;
@@ -11,16 +12,23 @@ public class MeshData
     public int[] triangles;
     public Vector2[] uvs;
 
-    public MeshData(Vector3[] vertices, Vector2[] uvs, int[] triangles) 
+    public MeshData(Vector3[] vertices, Vector2[] uvs, int[] triangles)
     {
-        mesh = new Mesh();
+        /*We don't instantiate the mesh here, as we want the data to be generated on a separate thread
+         and we can only modify meshes on the main thread.*/
         this.vertices = vertices;
         this.uvs = uvs;
         this.triangles = triangles;
+
+    }
+    public Mesh getMesh() 
+    {
+        Mesh mesh = new Mesh();
         mesh.vertices = vertices;
         mesh.uv = uvs;
         mesh.triangles = triangles;
         mesh.RecalculateNormals();
+        return mesh;
     }
 
 }
@@ -72,7 +80,6 @@ public static class MeshGenerator {
     //chunk size is in unity units. Resolution is the number of vertices in a row
     public static MeshData GenerateMesh(float[][] noiseMap, float heightMultiplier, int currentLevelOfDetail) 
     {
-        Mesh mesh = new Mesh();
         int width = noiseMap.Length;
         int length = noiseMap[0].Length;
         int meshSimplificationIncrement = (currentLevelOfDetail == 0) ? 1 : currentLevelOfDetail * 2;
@@ -96,7 +103,6 @@ public static class MeshGenerator {
                 {
                     AddTriangle(index, index + vertsPerRow + 1, index + vertsPerRow, ref tris, ref triIndex);
                     AddTriangle(index, index + 1, index + vertsPerRow + 1, ref tris, ref triIndex);
-                    Debug.Log(triIndex);
                 }
                 index++;
             
