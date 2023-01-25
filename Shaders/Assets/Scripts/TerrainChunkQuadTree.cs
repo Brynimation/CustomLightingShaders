@@ -30,7 +30,8 @@ public class TerrainChunkQuadTree
     }
     public void InsertPoint(Vector3 viewerPosition, float chunkSize, float distanceThreshold)
     {
-        if (!bounds.Contains(viewerPosition) || chunkSize < minChunkSize) //If the viewer is not in the bounds of this region then don't subdivide
+        /*If the viewer is not in the bounds of this region OR the chunkSize is too small then don't subdivide*/
+        if (!bounds.Contains(viewerPosition) || chunkSize < minChunkSize) 
         {
             return;
         }
@@ -47,7 +48,7 @@ public class TerrainChunkQuadTree
                 divided = true; 
             }
         }
-        if (divided) 
+        if (divided) //If we've split this region, then insert the point into the subregions
         {
             BL.InsertPoint(viewerPosition, chunkSize / 2, chunkSize / 2);
             BR.InsertPoint(viewerPosition, chunkSize / 2, chunkSize / 2);

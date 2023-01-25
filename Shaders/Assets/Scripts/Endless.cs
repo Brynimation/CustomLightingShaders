@@ -43,7 +43,6 @@ public class Endless : MonoBehaviour
         terrainChunkDict = new Dictionary<Vector2Int, TerrainChunk>();
         terrainChunksVisibleLastUpdate = new List<TerrainChunk>();
     }
-
     public void RequestMapData(Action<NoiseMapData> callback) 
     {
         //Thread start delegate represents our MapDataThread.
