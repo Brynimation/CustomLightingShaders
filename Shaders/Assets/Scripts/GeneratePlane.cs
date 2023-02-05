@@ -32,8 +32,8 @@ public class GeneratePlane : MonoBehaviour
     {
         meshRenderer = this.gameObject.AddComponent<MeshRenderer>();
         meshFilter = this.gameObject.AddComponent<MeshFilter>();
-        GeneratePoints();
-        //GeneratePlane();
+        //GeneratePoints();
+        GenerateTrianglePlane();
     }
 
     void GeneratePoints()
@@ -94,7 +94,6 @@ public class GeneratePlane : MonoBehaviour
     private void Update()
     {
         cameraPos = Camera.main.transform.position;
-        Debug.Log(cameraPos);
         material.SetVector("_CameraPosition", cameraPos);
         material.SetFloat("_CurTime", Time.time);
     }

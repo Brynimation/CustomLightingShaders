@@ -21,7 +21,6 @@ public static class Noise
             }
             noiseMap[x] = noiseMapCol;
         }
-        Debug.Log(noiseMap.Length);
         return noiseMap;
     } 
 }
