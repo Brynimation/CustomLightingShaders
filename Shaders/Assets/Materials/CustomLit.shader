@@ -1,4 +1,4 @@
-Shader "Custom/CustomLit"
+/*Shader "Custom/CustomLit"
 {
     Properties
     {
@@ -568,3 +568,4 @@ Shader "Custom/CustomLit"
     FallBack "Hidden/Universal Render Pipeline/FallbackError"
     CustomEditor "UnityEditor.Rendering.Universal.ShaderGUI.LitShader"
 }
+*/
