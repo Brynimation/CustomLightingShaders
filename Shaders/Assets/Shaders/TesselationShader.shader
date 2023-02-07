@@ -1,4 +1,10 @@
-// This shader draws a texture on the mesh.
+/*Tessellation can be expesnive. One reason for this is that it does not 
+automatically take advantage of frustrum or winding culling, as this is performed
+in the rasterization stage of the graphics pipeline, which is after the hull and
+domain functions are run.
+However, we can implement this ourselves. We just set the tessellation factor to
+zero so that the tessellator ignores that specific patch(remember a patch is just
+a primitive - a triangle).*/
 Shader "Custom/Tesselation"
 {
     // The _BaseMap variable is visible in the Material's Inspector, as a field
@@ -8,11 +14,12 @@ Shader "Custom/Tesselation"
         _MainTex("Base Map", 2D) = "white"{}//Texture declarations must end with a {}
         _Tint("Tint", Color) = (1.0, 1.0, 1.0, 1.0)
         _Alpha("Alpha", Float) = 1.0
-        _EdgeFactorA("Edge 1 Factor", Float) = 1.0
-        _EdgeFactorB("Edge 2 Factor", Float) = 1.0
-        _EdgeFactorC("Edge 3 Factor", Float) = 1.0
+        /*The compiler splits the patch constant function and calculates each edge Factor
+        in parallel in a bid to speed things up. This sometimes causes issues, which is
+        why we use a vector3 to hold all 3 edge factors.*/
+        _EdgeFactor("Edge Factors", Vector) = (1.0, 1.0, 1.0, 0.0)
         _InsideFactor("Inside Factor", Float) = 1.0
-        _OtherFloat("Other float", Float) = 2.0
+        [KeywordEnum(INTEGER, FRAC_EVEN, FRAC_ODD, POW2)] _PARTITIONING("Partition algoritm", Float) = 0
     }
 
     SubShader
@@ -32,7 +39,10 @@ Shader "Custom/Tesselation"
         #pragma domain Domain
         #pragma fragment frag
 
+        #ifndef TESSELLATION_FACTORS_INCLUDED
+        #define TESSELLATION_FACTORS_INCLUDED
 
+        #pragma shader_feature_local _PARTITIONING_INTEGER _PARTITIONING_FRAC_EVEN _PARTITIONING_FRAC_ODD _PARTITIONING_POW2
             
         //Input to vertex shader
         struct Attributes
@@ -40,6 +50,7 @@ Shader "Custom/Tesselation"
             float3 positionOS : POSITION;
             float3 normalOS: NORMAL0;
             float2 uv : TEXCOORD0;
+            float4 positionCS : TEXCOORD1;
             UNITY_VERTEX_INPUT_INSTANCE_ID
         };
         struct TessellationFactors
@@ -68,7 +79,47 @@ Shader "Custom/Tesselation"
             float3 normalWS : TEXCOORD2;
             float2 uv: TEXCOORD3;
         };
+        bool IsOutOfBounds(float3 p, float3 lower, float3 upper)
+        {
+            return p.x < lower.x || p.x > upper.x
+            ||     p.y < lower.y || p.y > upper.y
+            ||     p.z < lower.z || p.z > upper.z;
+        }
+        bool IsPointOutOfFrustum(float4 positionCS)
+        {
+            /*The w component of a clipspace position contains the outer bounds of
+            the camera viewing frustum. The UNITY_RAW_FAR_CLIP_PLANE variable
+            ensures that this works correctly on all grapics APIs.*/
+            float3 culling = positionCS.xyz;
+            float w = positionCS.w;
+            float3 lower = float3(-w, -w, -w * UNITY_RAW_FAR_CLIP_PLANE);
+            float3 upper = float3(w, w, w);
+            return IsOutOfBounds(culling, lower, higher);
+        }
 
+        bool ShouldCullPatch(float4 vertACS, float4 vertBCS, float4 vertCCS)
+        {
+            bool isOutside = IsPointOutOfFrustum(vertACS) && 
+            IsPointOutOfFrustum(vertBCS) &&
+            IsPointOutOfFrustum(vertCCS);
+            return isOutside && shouldBackFaceCull(vertACS, vertBCS, vertCCS);
+        }
+        bool shouldBackFaceCull(float4 posACS, float4 posBCS, float4 posCCS)
+        {
+            /*To determine if we should backface cull, we need to determine the
+            normal direction of the plane containing the triangle. We achieve 
+            this by taking the cross product of two vectors that are parallel to
+            the plane containing the triangle.*/
+            float3 a = posACS.xyz / posACS.w; //Since we're in clip space, we divide by w to apply perspective and to normalize
+            float3 b = posBCS.xyz / posBCS.w;
+            float3 c = posCCS.xyz / posCCS.w;
+            float3 normalToFace = cross(b-a, c-a);
+            /*If the dot product of the normal and the camera's view direction, 
+            which is always along the forward z axis in clip space, is less than zero,
+            then the direction vectors are more than 90 degrees apart and hence we cull
+            the face'*/
+            return dot(normalToFace, float3(0, 0, 0) < 0);
+        }
         // This macro declares _BaseMap as a Texture2D object.
         TEXTURE2D(_MainTex);
         // This macro declares the sampler for the _BaseMap texture.
@@ -83,11 +134,9 @@ Shader "Custom/Tesselation"
 
         uniform float4 _Tint;
         uniform float4 _Alpha;
-        uniform float _EdgeFactorA;
-        uniform float _EdgeFactorB;
-        uniform float _EdgeFactorC;
+        uniform float3 _EdgeFactor;
         uniform float _InsideFactor;
-        uniform float _OtherFloat;
+        #endif
         ENDHLSL
         Pass
         {
@@ -105,6 +154,7 @@ Shader "Custom/Tesselation"
                 VertexNormalInputs normalInputs = GetVertexNormalInputs(i.normalOS); //same as above but for normals
                 o.positionWS = posInputs.positionWS;
                 o.normalWS = normalInputs.normalWS;
+                o.positionCS = posInputs.CS;
                 o.uv = i.uv;
                 return o;
             }
@@ -113,23 +163,43 @@ Shader "Custom/Tesselation"
             {
                 UNITY_SETUP_INSTANCE_ID(patch[0]);
                 TessellationFactors o;
-                o.edge[0] = _OtherFloat;
-                o.edge[1] = _OtherFloat;
-                o.edge[2] = _OtherFloat;
-                o.inside = _OtherFloat;
+                if(ShouldCullPatch(patch[0], patch[1], patch[2])){
+                    o.edge[0] = o.edge[1] = o.edge[2] = o.inside = 0; 
+                }else{
+                    o.edge[0] = _EdgeFactor.x;
+                    o.edge[1] = _EdgeFactor.y;
+                    o.edge[2] = _EdgeFactor.z;
+                    o.inside = _InsideFactor;
+               }
+
                 return o;
             }
-
-
 
             /*The hull function receives data as patches; lists of vertices
             that make up some defined primitive, ie: a triangle. It runs once per
             vertex per patch. Can be used to modify data based on values in the entire primitive*/
-            [domain("tri")] //signals that we're inputting triangles - determines the input patch type
-            [outputcontrolpoints(3)] //Triangles have 3 points
-            [outputtopology("triangle_cw")] //signals that we're outputting three triangles - determines the output patch type
-            [patchconstantfunc("PatchConstantFunction")] //register the patch constant function
-            [partitioning("integer")] //select a partitioning algorithm: Integer, fractional_odd, fractional_even or pow2
+            [domain("tri")] // Signal we're inputting triangles
+            [outputcontrolpoints(3)] // Triangles have three points
+            [outputtopology("triangle_cw")] // Signal we're outputting triangles
+            [patchconstantfunc("PatchConstantFunction")] // Register the patch constant function
+            // Select a partitioning mode based on keywords
+            #if defined(_PARTITIONING_INTEGER)
+            [partitioning("integer")]
+            #elif defined(_PARTITIONING_FRAC_EVEN)
+            [partitioning("fractional_even")]
+            #elif defined(_PARTITIONING_FRAC_ODD)
+            [partitioning("fractional_odd")]
+            #elif defined(_PARTITIONING_POW2)
+            [partitioning("pow2")]
+            #else 
+            [partitioning("fractional_odd")]
+            #endif
+
+            /*Partitioning modes explained:
+                Integer - subdivides a number of times equal to the ceilling of the tessellation factor. 
+                The ceilling of a number is the smallest integer value greater than or equal to the number.
+                Fractional odd and fractional even modes allow for smooth transitions between different
+                tessellation factors.*/
             TessellationControlPoint Hull(
                 InputPatch<TessellationControlPoint, 3> patch, //input triangle
                 uint id : SV_OutputControlPointID //vertex index on triangle - signals which vertex on the patch to output data for
@@ -139,7 +209,8 @@ Shader "Custom/Tesselation"
             }
             //runs once per patch
 
-
+         /*This allows us to use barycentric_interpolation
+         to interpolate any property in the patch structure*/
         #define BARYCENTRIC_INTERPOLATE(fieldName) \
 		        patch[0].fieldName * barycentricCoordinates.x + \
 		        patch[1].fieldName * barycentricCoordinates.y + \
@@ -166,7 +237,6 @@ Shader "Custom/Tesselation"
                 o.positionWS = positionWS;
                 o.uv = patch[0].uv;
                 return o;
-
             }
 
             /* struct Varyings
@@ -185,6 +255,8 @@ Shader "Custom/Tesselation"
                 return baseTex;
             }
             ENDHLSL
+            
         }
+        
     }
 }
