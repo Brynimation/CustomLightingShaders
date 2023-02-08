@@ -4,7 +4,14 @@ in the rasterization stage of the graphics pipeline, which is after the hull and
 domain functions are run.
 However, we can implement this ourselves. We just set the tessellation factor to
 zero so that the tessellator ignores that specific patch(remember a patch is just
-a primitive - a triangle).*/
+a primitive - a triangle).
+
+Another way to optimise tessellation is to reduce the values of the tessellation factors
+of meshes that don't need to be subdivided.
+For instance, if working with a mesh consisting of larger and smaller faces, we really only
+need to tessellate the larger faces. One way to do this is to calculate the tessellation factors
+proportional to the edge length. This is what our EdgeTessellationFactor function is for.'
+*/
 Shader "Custom/Tesselation"
 {
     // The _BaseMap variable is visible in the Material's Inspector, as a field
@@ -19,6 +26,9 @@ Shader "Custom/Tesselation"
         why we use a vector3 to hold all 3 edge factors.*/
         _EdgeFactor("Edge Factors", Vector) = (1.0, 1.0, 1.0, 0.0)
         _InsideFactor("Inside Factor", Float) = 1.0
+        _Tolerance("Tolerance", Float) = 1.0 
+        _EdgeScale("Edge Scale", Float) = 1.0
+        _EdgeBias("Edge Bias", Float) = 1.0
         [KeywordEnum(INTEGER, FRAC_EVEN, FRAC_ODD, POW2)] _PARTITIONING("Partition algoritm", Float) = 0
     }
 
@@ -43,7 +53,24 @@ Shader "Custom/Tesselation"
         #define TESSELLATION_FACTORS_INCLUDED
 
         #pragma shader_feature_local _PARTITIONING_INTEGER _PARTITIONING_FRAC_EVEN _PARTITIONING_FRAC_ODD _PARTITIONING_POW2
-            
+        
+         // This macro declares _BaseMap as a Texture2D object.
+        TEXTURE2D(_MainTex);
+        // This macro declares the sampler for the _BaseMap texture.
+        SAMPLER(sampler_MainTex);
+
+        CBUFFER_START(UnityPerMaterial)
+            // The following line declares the _BaseMap_ST variable, so that you
+            // can use the _BaseMap variable in the fragment shader. The _ST 
+            // suffix is necessary for the tiling and offset function to work.
+            float4 _MainTex_ST;
+        CBUFFER_END
+        
+        uniform float4 _Tint;
+        uniform float4 _Alpha;
+        uniform float3 _EdgeFactor;
+        uniform float _InsideFactor;
+        uniform float _Tolerance;
         //Input to vertex shader
         struct Attributes
         {
@@ -64,6 +91,7 @@ Shader "Custom/Tesselation"
             float3 positionWS : INTERNALTESSPOS;
             float3 normalWS: NORMAL0;
             float2 uv : TEXCOORD0;
+            float4 positionCS : TEXCOORD1;
             UNITY_VERTEX_INPUT_INSTANCE_ID
         };
         /*Output of patch constant shader, input to domain shader. The edge array stores
@@ -79,6 +107,16 @@ Shader "Custom/Tesselation"
             float3 normalWS : TEXCOORD2;
             float2 uv: TEXCOORD3;
         };
+
+        /*This defines the tessellation factor of the edge bound by the vertices A and B. posAWS 
+        and posBWS are the positions of these vertices in world space*/
+        float EdgeTessellationFactor(float scale, float bias, float3 posAWS, float3 posBWS)
+        {
+            float factor = distance(posAWS, posBWS) / scale;
+
+            return max(1, factor + bias);
+        }
+
         bool IsOutOfBounds(float3 p, float3 lower, float3 upper)
         {
             return p.x < lower.x || p.x > upper.x
@@ -89,21 +127,17 @@ Shader "Custom/Tesselation"
         {
             /*The w component of a clipspace position contains the outer bounds of
             the camera viewing frustum. The UNITY_RAW_FAR_CLIP_PLANE variable
-            ensures that this works correctly on all grapics APIs.*/
+            ensures that this works correctly on all grapics APIs.
+            We add this tolerance parameter to ensure that only the faces we truly want culled 
+            are culled.
+            */
             float3 culling = positionCS.xyz;
             float w = positionCS.w;
-            float3 lower = float3(-w, -w, -w * UNITY_RAW_FAR_CLIP_PLANE);
-            float3 upper = float3(w, w, w);
-            return IsOutOfBounds(culling, lower, higher);
+            float3 lower = float3(-w -_Tolerance, -w -_Tolerance, -w -_Tolerance);
+            float3 upper = float3(w + _Tolerance, w + _Tolerance, w + _Tolerance);
+            return IsOutOfBounds(culling, lower, upper);
         }
 
-        bool ShouldCullPatch(float4 vertACS, float4 vertBCS, float4 vertCCS)
-        {
-            bool isOutside = IsPointOutOfFrustum(vertACS) && 
-            IsPointOutOfFrustum(vertBCS) &&
-            IsPointOutOfFrustum(vertCCS);
-            return isOutside && shouldBackFaceCull(vertACS, vertBCS, vertCCS);
-        }
         bool shouldBackFaceCull(float4 posACS, float4 posBCS, float4 posCCS)
         {
             /*To determine if we should backface cull, we need to determine the
@@ -118,24 +152,17 @@ Shader "Custom/Tesselation"
             which is always along the forward z axis in clip space, is less than zero,
             then the direction vectors are more than 90 degrees apart and hence we cull
             the face'*/
-            return dot(normalToFace, float3(0, 0, 0) < 0);
+            return dot(normalToFace, float3(0, 0, 0)) < _Tolerance;
         }
-        // This macro declares _BaseMap as a Texture2D object.
-        TEXTURE2D(_MainTex);
-        // This macro declares the sampler for the _BaseMap texture.
-        SAMPLER(sampler_MainTex);
+         bool ShouldCullPatch(float4 vertACS, float4 vertBCS, float4 vertCCS)
+        {
+            bool isOutside = IsPointOutOfFrustum(vertACS) && 
+            IsPointOutOfFrustum(vertBCS) &&
+            IsPointOutOfFrustum(vertCCS);
+            return isOutside && shouldBackFaceCull(vertACS, vertBCS, vertCCS);
+        }
 
-        CBUFFER_START(UnityPerMaterial)
-            // The following line declares the _BaseMap_ST variable, so that you
-            // can use the _BaseMap variable in the fragment shader. The _ST 
-            // suffix is necessary for the tiling and offset function to work.
-            float4 _MainTex_ST;
-        CBUFFER_END
 
-        uniform float4 _Tint;
-        uniform float4 _Alpha;
-        uniform float3 _EdgeFactor;
-        uniform float _InsideFactor;
         #endif
         ENDHLSL
         Pass
@@ -154,7 +181,7 @@ Shader "Custom/Tesselation"
                 VertexNormalInputs normalInputs = GetVertexNormalInputs(i.normalOS); //same as above but for normals
                 o.positionWS = posInputs.positionWS;
                 o.normalWS = normalInputs.normalWS;
-                o.positionCS = posInputs.CS;
+                o.positionCS = posInputs.positionCS;
                 o.uv = i.uv;
                 return o;
             }
@@ -163,7 +190,7 @@ Shader "Custom/Tesselation"
             {
                 UNITY_SETUP_INSTANCE_ID(patch[0]);
                 TessellationFactors o;
-                if(ShouldCullPatch(patch[0], patch[1], patch[2])){
+                if(ShouldCullPatch(patch[0].positionCS, patch[1].positionCS, patch[2].positionCS)){
                     o.edge[0] = o.edge[1] = o.edge[2] = o.inside = 0; 
                 }else{
                     o.edge[0] = _EdgeFactor.x;
