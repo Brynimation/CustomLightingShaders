@@ -29,6 +29,7 @@ Shader "Custom/Tesselation"
         _Tolerance("Tolerance", Float) = 1.0 
         _EdgeScale("Edge Scale", Float) = 1.0
         _EdgeBias("Edge Bias", Float) = 1.0
+        _ScreenParams("Screen parameters", Vector) = (0.0, 0.0, 0.0, 0.0)
         [KeywordEnum(INTEGER, FRAC_EVEN, FRAC_ODD, POW2)] _PARTITIONING("Partition algoritm", Float) = 0
     }
 
@@ -71,6 +72,7 @@ Shader "Custom/Tesselation"
         uniform float3 _EdgeFactor;
         uniform float _InsideFactor;
         uniform float _Tolerance;
+        uniform float _ScreenParams;
         //Input to vertex shader
         struct Attributes
         {
@@ -110,9 +112,11 @@ Shader "Custom/Tesselation"
 
         /*This defines the tessellation factor of the edge bound by the vertices A and B. posAWS 
         and posBWS are the positions of these vertices in world space*/
-        float EdgeTessellationFactor(float scale, float bias, float3 posAWS, float3 posBWS)
+        float EdgeTessellationFactor(float scale, float bias, float3 posAWS, float3 posBWS, float4 posACS, float4 posBCS)
         {
-            float factor = distance(posAWS, posBWS) / scale;
+            float3 aCSPerspective = posACS.xyz/posACS.w;
+            float bCSPerspective = posBCS.xyz/posBCS.w;
+            float factor = distance(aCSPerspective, bCSPerspective) * _ScreenParams.y/ scale;
 
             return max(1, factor + bias);
         }
@@ -193,9 +197,9 @@ Shader "Custom/Tesselation"
                 if(ShouldCullPatch(patch[0].positionCS, patch[1].positionCS, patch[2].positionCS)){
                     o.edge[0] = o.edge[1] = o.edge[2] = o.inside = 0; 
                 }else{
-                    o.edge[0] = _EdgeFactor.x;
-                    o.edge[1] = _EdgeFactor.y;
-                    o.edge[2] = _EdgeFactor.z;
+                    o.edge[0] = EdgeTessellationFactor(_EdgeScale, _EdgeBias, patch[0].positionWS, position[2].positionWS, patch[0].positionCS, patch[2].positionCS);;
+                    o.edge[1] = EdgeTessellationFactor(_EdgeScale, _EdgeBias, patch[2].positionWS, position[0].positionWS, patch[2].positionCS, patch[0].positionCS);
+                    o.edge[2] = EdgeTessellationFactor(_EdgeScale, _EdgeBias, patch[0].positionWS, position[1].positionWS, patch[0].positionCS, patch[1].positionCS);
                     o.inside = _InsideFactor;
                }
 
